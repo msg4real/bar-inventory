@@ -12,11 +12,13 @@ class InventoryController
 
     public function index(Request $req, Response $res): Response
     {
-        $db      = $this->container->get('db');
-        $bottles = $db->query("SELECT * FROM bottles ORDER BY name ASC")->fetchAll();
-        $fields  = $db->query("SELECT * FROM field_config ORDER BY sort_order")->fetchAll();
-        $custom  = $db->query("SELECT * FROM custom_fields WHERE enabled=1 ORDER BY sort_order")->fetchAll();
-        return $this->render($res, 'inventory/index', compact('bottles', 'fields', 'custom'));
+        $db         = $this->container->get('db');
+        $bottles    = $db->query("SELECT * FROM bottles ORDER BY name ASC")->fetchAll();
+        $fields     = $db->query("SELECT * FROM field_config ORDER BY sort_order")->fetchAll();
+        $custom     = $db->query("SELECT * FROM custom_fields WHERE enabled=1 ORDER BY sort_order")->fetchAll();
+        $settings   = $db->query("SELECT key, value FROM settings")->fetchAll(\PDO::FETCH_KEY_PAIR);
+        $categories = json_decode($settings['categories'] ?? '[]', true) ?: ['Bourbon','Scotch','Whiskey','Vodka','Gin','Rum','Tequila','Mezcal','Other'];
+        return $this->render($res, 'inventory/index', compact('bottles', 'fields', 'custom', 'categories'));
     }
 
     public function scanPage(Request $req, Response $res): Response

@@ -18,6 +18,17 @@ class ApiController
 
     private function role(): string  { return $_SESSION['user']['role'] ?? 'viewer'; }
     private function canEdit(): bool { return in_array($this->role(), ['admin', 'editor']); }
+    private function body(Request $req): array
+    {
+        $parsed = $req->getParsedBody();
+        if (is_array($parsed) && !empty($parsed)) return $parsed;
+        $raw = (string)$req->getBody();
+        if ($raw) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) return $decoded;
+        }
+        return [];
+    }
 
     // ── Bottles ───────────────────────────────────────────────────────────────
 
@@ -34,7 +45,7 @@ class ApiController
     {
         if (!$this->canEdit()) return $this->json($res, ['error' => 'Forbidden'], 403);
 
-        $b    = $req->getParsedBody() ?? [];
+        $b    = $this->body($req);
         $stmt = $this->db()->prepare("
             INSERT INTO bottles (name, brand, category, vintage, abv, country, fill, barcode, notes, custom_data, created_by)
             VALUES (:name, :brand, :category, :vintage, :abv, :country, :fill, :barcode, :notes, :custom_data, :created_by)
@@ -62,7 +73,7 @@ class ApiController
     {
         if (!$this->canEdit()) return $this->json($res, ['error' => 'Forbidden'], 403);
 
-        $b  = $req->getParsedBody() ?? [];
+        $b  = $this->body($req);
         $id = (int)$args['id'];
         $this->db()->prepare("
             UPDATE bottles SET
@@ -99,7 +110,7 @@ class ApiController
     {
         if (!$this->canEdit()) return $this->json($res, ['error' => 'Forbidden'], 403);
 
-        $bottles = ($req->getParsedBody() ?? [])['bottles'] ?? [];
+        $bottles = ($this->body($req))['bottles'] ?? [];
         $stmt    = $this->db()->prepare("
             INSERT INTO bottles (name, brand, category, vintage, abv, country, fill, barcode, notes, custom_data, created_by)
             VALUES (:name, :brand, :category, :vintage, :abv, :country, :fill, :barcode, :notes, :custom_data, :created_by)
@@ -225,7 +236,7 @@ class ApiController
     {
         if (!$this->canEdit()) return $this->json($res, ['error' => 'Forbidden'], 403);
 
-        $b  = $req->getParsedBody() ?? [];
+        $b  = $this->body($req);
         $db = $this->db();
         $db->prepare("
             INSERT INTO recipes (name, description, category, glass, garnish, instructions, created_by)
@@ -251,7 +262,7 @@ class ApiController
     {
         if (!$this->canEdit()) return $this->json($res, ['error' => 'Forbidden'], 403);
 
-        $b  = $req->getParsedBody() ?? [];
+        $b  = $this->body($req);
         $id = (int)$args['id'];
         $db = $this->db();
         $db->prepare("
@@ -298,7 +309,7 @@ class ApiController
     {
         if ($this->role() !== 'admin') return $this->json($res, ['error' => 'Forbidden'], 403);
 
-        $body    = $req->getParsedBody() ?? [];
+        $body    = $this->body($req);
         $stmt    = $this->db()->prepare("UPDATE settings SET value = ? WHERE key = ?");
         $allowed = ['app_name','app_logo','theme','theme_custom','require_login',
                     'default_category','default_fill','currency','currency_symbol',
@@ -317,7 +328,7 @@ class ApiController
     {
         if ($this->role() !== 'admin') return $this->json($res, ['error' => 'Forbidden'], 403);
 
-        $body = $req->getParsedBody() ?? [];
+        $body = $this->body($req);
         $db   = $this->db();
 
         if (!empty($body['builtin'])) {
@@ -353,11 +364,20 @@ class ApiController
     public function saveCustomTheme(Request $req, Response $res): Response
     {
         if ($this->role() !== 'admin') return $this->json($res, ['error' => 'Forbidden'], 403);
-        $body = $req->getParsedBody() ?? [];
+        $body = $this->body($req);
         $name = trim($body['name'] ?? '');
         $vars = $body['vars'] ?? '{}';
         if (!$name) return $this->json($res, ['error' => 'Name required'], 400);
-        $varsJson = is_array($vars) ? json_encode($vars) : $vars;
+        // Handle vars as array, JSON string, or already-encoded
+        if (is_array($vars)) {
+            $varsJson = json_encode($vars);
+        } elseif (is_string($vars)) {
+            // Validate it's valid JSON, re-encode if needed
+            $decoded = json_decode($vars, true);
+            $varsJson = $decoded !== null ? $vars : json_encode([]);
+        } else {
+            $varsJson = '{}';
+        }
         $db = $this->db();
         $db->prepare("INSERT INTO custom_themes (name, vars) VALUES (?,?) ON CONFLICT(name) DO UPDATE SET vars=excluded.vars")
            ->execute([$name, $varsJson]);
@@ -391,7 +411,7 @@ class ApiController
     public function saveCategories(Request $req, Response $res): Response
     {
         if ($this->role() !== 'admin') return $this->json($res, ['error' => 'Forbidden'], 403);
-        $body = $req->getParsedBody() ?? [];
+        $body = $this->body($req);
         $cats = array_values(array_filter(array_map('trim', $body['categories'] ?? [])));
         $this->db()->prepare("UPDATE settings SET value = ? WHERE key = 'categories'")->execute([json_encode($cats)]);
         return $this->json($res, ['ok' => true, 'categories' => $cats]);
@@ -400,11 +420,18 @@ class ApiController
     public function createUser(Request $req, Response $res): Response
     {
         if ($this->role() !== 'admin') return $this->json($res, ['error' => 'Forbidden'], 403);
-
-        $b    = $req->getParsedBody() ?? [];
-        $hash = password_hash($b['password'] ?? '', PASSWORD_BCRYPT);
+        $b        = $this->body($req);
+        $username = trim($b['username'] ?? '');
+        $password = $b['password'] ?? '';
+        $role     = $b['role'] ?? 'viewer';
+        if (!$username) return $this->json($res, ['error' => 'Username is required'], 400);
+        if (strlen($password) < 1) return $this->json($res, ['error' => 'Password is required'], 400);
+        $chk = $this->db()->prepare("SELECT id FROM users WHERE username = ?");
+        $chk->execute([$username]);
+        if ($chk->fetch()) return $this->json($res, ['error' => 'Username already exists'], 409);
+        $hash = password_hash($password, PASSWORD_BCRYPT);
         $this->db()->prepare("INSERT INTO users (username, password, role) VALUES (?, ?, ?)")
-             ->execute([trim($b['username'] ?? ''), $hash, $b['role'] ?? 'viewer']);
+             ->execute([$username, $hash, $role]);
         return $this->json($res, ['id' => (int)$this->db()->lastInsertId()], 201);
     }
 
@@ -412,7 +439,7 @@ class ApiController
     {
         if ($this->role() !== 'admin') return $this->json($res, ['error' => 'Forbidden'], 403);
 
-        $b  = $req->getParsedBody() ?? [];
+        $b  = $this->body($req);
         $id = (int)$args['id'];
 
         if (!empty($b['password'])) {

@@ -36,7 +36,7 @@ class ImportExportController
 
     public function importBottles(Request $req, Response $res): Response
     {
-        $body    = $req->getParsedBody() ?? [];
+        $body    = (function() use ($req) { $p = $req->getParsedBody(); if (is_array($p) && !empty($p)) return $p; $r = (string)$req->getBody(); return $r ? (json_decode($r,true) ?: []) : []; })();
         $rows    = $body['rows']   ?? [];
         $actions = $body['actions'] ?? []; // ['skip'|'overwrite'|'new'] keyed by index
 
@@ -91,7 +91,7 @@ class ImportExportController
 
     public function importRecipes(Request $req, Response $res): Response
     {
-        $body    = $req->getParsedBody() ?? [];
+        $body    = (function() use ($req) { $p = $req->getParsedBody(); if (is_array($p) && !empty($p)) return $p; $r = (string)$req->getBody(); return $r ? (json_decode($r,true) ?: []) : []; })();
         $rows    = $body['rows']    ?? [];
         $actions = $body['actions'] ?? [];
 

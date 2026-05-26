@@ -1,0 +1,7 @@
+vendor/
+/data/
+*.db
+*.pem
+*.key
+.env
+composer.lock

@@ -42,6 +42,7 @@ $uri      = $_SERVER['REQUEST_URI'] ?? '/';
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍾</text></svg>">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<script src="/js/app.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root { <?= $cssVars ?>
@@ -90,11 +91,11 @@ button.danger:hover{background:rgba(224,82,82,.2)}
 @keyframes scanLine{0%,100%{top:0;opacity:.8}50%{top:calc(100% - 2px);opacity:1}}
 .fill-bar{flex:1;height:5px;background:var(--surface-3);border-radius:3px;overflow:hidden}
 .fill-bar-inner{height:100%;border-radius:3px;transition:width .4s ease}
-nav.sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);min-height:100vh;display:flex;flex-direction:column;position:fixed;left:0;top:0;z-index:20}
+nav.sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);height:100vh;display:flex;flex-direction:column;position:fixed;left:0;top:0;z-index:20;overflow:hidden}
 .sidebar-logo{padding:1.25rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
 .sidebar-logo img{height:32px;width:32px;object-fit:contain;border-radius:4px}
 .sidebar-logo .name{font-family:var(--font-display);font-size:1.05rem;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.sidebar-nav{flex:1;padding:.75rem .5rem;overflow-y:auto}
+.sidebar-nav{flex:1;padding:.75rem .5rem;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .nav-item{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:var(--radius);color:var(--text-muted);font-size:14px;font-weight:500;cursor:pointer;transition:all .15s;border:none;background:none;width:100%;text-decoration:none}
 .nav-item:hover{background:var(--surface-2);color:var(--text);text-decoration:none}
 .nav-item.active{background:var(--accent-dim);color:var(--accent-light);border:1px solid rgba(200,134,42,.15)}
@@ -133,7 +134,7 @@ main.content{margin-left:220px;padding:2rem;min-height:100vh}
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:29;backdrop-filter:blur(2px)}
 @media(max-width:768px){
   .hamburger{display:flex}
-  nav.sidebar{transform:translateX(-100%);transition:transform .25s ease;z-index:30;width:240px}
+  nav.sidebar{transform:translateX(-100%);transition:transform .25s ease;z-index:30;width:240px;height:100vh}
   nav.sidebar.open{transform:translateX(0)}
   .sidebar-overlay.open{display:block}
   main.content{margin-left:0;padding:1rem;padding-top:60px}
@@ -228,159 +229,4 @@ main.content{margin-left:220px;padding:2rem;min-height:100vh}
 
 <div id="toast-container"></div>
 
-<script>
-// ── Toast ──────────────────────────────────────────────────────────────────
-function showToast(msg, type='ok') {
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.style.borderColor = type==='err' ? 'rgba(224,82,82,.3)' : 'var(--border-md)';
-  t.innerHTML = `<i class="ti ${type==='err'?'ti-alert-circle':'ti-circle-check'}" style="color:${type==='err'?'var(--danger)':'var(--success)'};font-size:16px"></i><span>${msg}</span>`;
-  document.getElementById('toast-container').appendChild(t);
-  setTimeout(() => t.remove(), 3500);
-}
-
-// ── API helper ─────────────────────────────────────────────────────────────
-async function api(method, url, data) {
-  const opts = { method, headers: {'Content-Type':'application/json'} };
-  if (data) opts.body = JSON.stringify(data);
-  const r = await fetch(url, opts);
-  const json = await r.json();
-  if (!r.ok) throw new Error(json.error || 'Request failed');
-  return json;
-}
-
-// ── Custom Select ──────────────────────────────────────────────────────────
-// Usage: <div class="cs-wrap" data-name="category" data-value="Rum" data-searchable="true">
-//          <div class="cs-options" data-value="Rum">Rum</div> ...
-//        </div>
-// Produces a hidden <input> with the chosen value; also fires 'change' event on wrapper.
-
-function initCustomSelects(root = document) {
-  root.querySelectorAll('.cs-wrap:not([data-cs-init])').forEach(wrap => {
-    wrap.setAttribute('data-cs-init', '1');
-    const name       = wrap.dataset.name || '';
-    const initVal    = wrap.dataset.value || '';
-    const searchable = wrap.dataset.searchable === 'true';
-    const placeholder= wrap.dataset.placeholder || 'Select…';
-
-    // Collect options from child .cs-options elements
-    const optEls = [...wrap.querySelectorAll('.cs-options')];
-    const options = optEls.map(el => ({ value: el.dataset.value ?? el.textContent.trim(), label: el.textContent.trim() }));
-    optEls.forEach(el => el.remove());
-
-    let current = initVal || (options[0]?.value ?? '');
-
-    // Build DOM
-    wrap.innerHTML = `
-      <button type="button" class="cs-trigger" aria-haspopup="listbox">
-        <span class="cs-label">${getLabel(current)}</span>
-        <i class="ti ti-chevron-down arrow"></i>
-      </button>
-      <div class="cs-dropdown" role="listbox">
-        ${searchable ? '<div class="cs-search"><input type="text" placeholder="Search…" autocomplete="off"></div>' : ''}
-        <div class="cs-list"></div>
-      </div>
-      <input type="hidden" name="${name}" value="${escH(current)}">
-    `;
-
-    const trigger  = wrap.querySelector('.cs-trigger');
-    const dropdown = wrap.querySelector('.cs-dropdown');
-    const listEl   = wrap.querySelector('.cs-list');
-    const searchEl = wrap.querySelector('.cs-search input');
-    const hidden   = wrap.querySelector('input[type=hidden]');
-
-    function getLabel(val) {
-      return escH(options.find(o => o.value === val)?.label ?? val ?? placeholder);
-    }
-    function escH(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-    function renderList(filter = '') {
-      const f = filter.toLowerCase();
-      const filtered = filter ? options.filter(o => o.label.toLowerCase().includes(f)) : options;
-      if (!filtered.length) { listEl.innerHTML = '<div class="cs-empty">No results</div>'; return; }
-      listEl.innerHTML = filtered.map(o =>
-        `<div class="cs-option${o.value===current?' selected':''}" data-value="${escH(o.value)}">${escH(o.label)}</div>`
-      ).join('');
-      listEl.querySelectorAll('.cs-option').forEach(opt => {
-        opt.addEventListener('click', () => select(opt.dataset.value));
-      });
-    }
-
-    function select(val) {
-      current = val;
-      hidden.value = val;
-      trigger.querySelector('.cs-label').innerHTML = getLabel(val);
-      close();
-      wrap.dispatchEvent(new Event('change', {bubbles: true}));
-    }
-
-    function open() {
-      trigger.classList.add('open');
-      dropdown.classList.add('open');
-      renderList();
-      if (searchEl) { searchEl.value = ''; searchEl.focus(); }
-      // Scroll selected into view
-      setTimeout(() => { dropdown.querySelector('.selected')?.scrollIntoView({block:'nearest'}); }, 50);
-    }
-    function close() {
-      trigger.classList.remove('open');
-      dropdown.classList.remove('open');
-    }
-
-    trigger.addEventListener('click', e => { e.stopPropagation(); dropdown.classList.contains('open') ? close() : open(); });
-    if (searchEl) searchEl.addEventListener('input', () => renderList(searchEl.value));
-    document.addEventListener('click', e => { if (!wrap.contains(e.target)) close(); });
-
-    // Public API: wrap.csSelect(val) to set programmatically
-    wrap.csSelect = (val) => { if (options.find(o=>o.value===val)) select(val); };
-
-    renderList();
-  });
-}
-
-// ── Mobile sidebar ─────────────────────────────────────────────────────────
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('sidebar-overlay').classList.toggle('open');
-}
-function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('sidebar-overlay').classList.remove('open');
-}
-// Close sidebar when a nav link is tapped on mobile
-document.querySelectorAll('.nav-item').forEach(el => {
-  el.addEventListener('click', () => { if (window.innerWidth <= 768) closeSidebar(); });
-});
-
-
-let adminPinCallback = null;
-function requireAdminPin(callback) {
-  const pin = sessionStorage.getItem('admin_pin_ok');
-  if (pin === '1') { callback(); return; }
-  adminPinCallback = callback;
-  document.getElementById('pin-modal')?.classList.remove('hidden');
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  initCustomSelects();
-
-  const pinForm = document.getElementById('pin-form');
-  if (pinForm) {
-    pinForm.addEventListener('submit', async e => {
-      e.preventDefault();
-      const pin = document.getElementById('pin-input').value;
-      try {
-        await api('POST', '/admin/pin/verify', { pin });
-        sessionStorage.setItem('admin_pin_ok', '1');
-        document.getElementById('pin-modal').classList.add('hidden');
-        adminPinCallback?.();
-      } catch {
-        document.getElementById('pin-error').textContent = 'Incorrect PIN';
-      }
-    });
-  }
-});
-</script>
-
 </body>
-</html>

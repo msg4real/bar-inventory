@@ -30,7 +30,7 @@ $colorFields = [
 <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:.75rem">Built-in Presets</h3>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-width:820px;margin-bottom:2rem">
   <?php foreach ($presets as $key => $p): ?>
-  <div class="theme-tile" data-theme="<?= $key ?>" onclick="selectTheme('<?= $key ?>', <?= json_encode($p) ?>)"
+  <div class="theme-tile" data-theme="<?= $key ?>" data-vars="<?= htmlspecialchars(json_encode($p), ENT_QUOTES) ?>" onclick="selectThemeEl(this)"
        style="cursor:pointer;border-radius:var(--radius-lg);overflow:hidden;border:2px solid <?= $currentTheme===$key?'var(--accent)':'var(--border)' ?>;transition:border-color .15s">
     <div style="height:72px;background:<?= $p['--bg'] ?>;display:flex;align-items:center;justify-content:center;position:relative">
       <span style="font-size:26px"><?= $p['emoji'] ?></span>
@@ -91,7 +91,7 @@ $colorFields = [
     <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
       <span style="font-size:12px;color:var(--text-muted);align-self:center">Start from:</span>
       <?php foreach ($presets as $key => $p): ?>
-      <button onclick="loadPresetIntoEditor(<?= json_encode($p) ?>)" class="ghost" style="font-size:11px;padding:4px 8px"><?= $p['name'] ?></button>
+      <button onclick="loadPresetIntoEditor(this)" data-vars="<?= htmlspecialchars(json_encode($p), ENT_QUOTES) ?>" class="ghost" style="font-size:11px;padding:4px 8px"><?= $p['name'] ?></button>
       <?php endforeach; ?>
     </div>
 
@@ -130,7 +130,11 @@ $colorFields = [
 let selectedTheme = '<?= $currentTheme ?>';
 
 // ── Select built-in preset ─────────────────────────────────────────────────
-function selectTheme(key, vars) {
+function selectThemeEl(el) {
+  const key  = el.dataset.theme;
+  selectTheme(key);
+}
+function selectTheme(key) {
   selectedTheme = key;
   updateTiles(key);
   saveThemeSetting({ theme: key });
@@ -165,7 +169,10 @@ const defaultVars = {
 };
 
 function openEditor(theme) {
-  document.getElementById('theme-editor-overlay').style.display = 'flex';
+  const overlay = document.getElementById('theme-editor-overlay');
+  overlay.style.display = 'flex';
+  overlay.querySelectorAll('.cs-wrap').forEach(w => w.removeAttribute('data-cs-init'));
+  initCustomSelects(overlay);
   document.getElementById('editing-theme-id').value = theme?.id ?? '';
   document.getElementById('editor-title').textContent = theme ? 'Edit Theme' : 'New Theme';
   document.getElementById('theme-name').value = theme?.name ?? '';
@@ -178,7 +185,8 @@ function closeEditor() {
   document.getElementById('theme-editor-overlay').style.display = 'none';
 }
 
-function loadPresetIntoEditor(preset) {
+function loadPresetIntoEditor(el) {
+  const preset = typeof el === "object" && el.dataset ? JSON.parse(el.dataset.vars) : el;
   loadVarsIntoPickers(preset);
   livePreview();
 }
@@ -211,7 +219,7 @@ async function saveCustomTheme() {
   const vars = getEditorVars();
   const id   = document.getElementById('editing-theme-id').value;
   try {
-    await api('POST', '/api/admin/themes', { name, vars: JSON.stringify(vars), id });
+    await api('POST', '/api/admin/themes', { name: name, vars: JSON.stringify(vars), id: id });
     showToast('Theme saved — reloading…');
     setTimeout(() => location.reload(), 700);
   } catch(e) { showToast(e.message, 'err'); }

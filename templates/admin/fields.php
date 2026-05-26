@@ -149,5 +149,5 @@ async function saveAll() {
   } catch(e) { showToast(e.message, 'err'); }
 }
 
-document.addEventListener('DOMContentLoaded', () => initCustomSelects());
+// initCustomSelects called by app.js
 </script>

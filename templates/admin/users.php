@@ -32,6 +32,7 @@
       <td style="padding:8px 16px">
         <div style="display:flex;gap:4px">
           <button class="ghost" onclick='openEditUser(<?= htmlspecialchars(json_encode($u),ENT_QUOTES) ?>)' title="Edit"><i class="ti ti-edit" style="font-size:15px"></i></button>
+          <button class="ghost" onclick='openResetPassword(<?= $u['id'] ?>, "<?= htmlspecialchars(addslashes($u['username'])) ?>")' title="Reset password"><i class="ti ti-key" style="font-size:15px"></i></button>
           <?php if (!$isMe): ?>
           <button class="ghost" onclick="confirmDeleteUser(<?= $u['id'] ?>, '<?= htmlspecialchars(addslashes($u['username'])) ?>')" style="color:var(--danger)" title="Delete"><i class="ti ti-trash" style="font-size:15px"></i></button>
           <?php endif; ?>
@@ -66,22 +67,44 @@
       <h2 id="user-modal-title" style="font-family:var(--font-display);font-size:1.2rem">Add User</h2>
       <button class="ghost" onclick="closeUserModal()"><i class="ti ti-x"></i></button>
     </div>
-    <form id="user-form" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;flex-direction:column;gap:12px">
       <input type="hidden" id="u-id">
-      <div><label class="label">Username *</label><input id="u-username" required autocomplete="off"></div>
-      <div><label class="label">Role</label>
-        <select id="u-role">
+      <div>
+        <label class="label">Username *</label>
+        <input id="u-username" autocomplete="off" placeholder="username">
+      </div>
+      <div>
+        <label class="label">Role</label>
+        <select id="u-role" style="display:block;width:100%;padding:9px 12px;background:var(--surface);color:var(--text);border:1px solid var(--border-md);border-radius:var(--radius);font-size:14px;font-family:var(--font-ui);cursor:pointer;-webkit-appearance:none;appearance:none">
           <option value="viewer">Viewer — read only</option>
           <option value="editor">Editor — add/edit/delete</option>
           <option value="admin">Admin — full access</option>
         </select>
       </div>
-      <div><label class="label">Password *</label><input type="password" id="u-password" autocomplete="new-password"><p id="pw-hint" style="font-size:11px;color:var(--text-faint);margin-top:3px"></p></div>
+      <div>
+        <label class="label">Password *</label>
+        <input type="password" id="u-password" autocomplete="new-password" placeholder="minimum 6 characters">
+        <p id="pw-hint" style="font-size:11px;color:var(--text-faint);margin-top:3px"></p>
+      </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:.5rem">
         <button type="button" onclick="closeUserModal()">Cancel</button>
-        <button type="submit" class="primary" id="user-save-btn">Add User</button>
+        <button class="primary" id="user-save-btn" onclick="submitUser()">Add User</button>
       </div>
-    </form>
+    </div>
+  </div>
+</div>
+
+<!-- Reset password modal -->
+<div id="reset-pw-modal" class="overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="width:100%;max-width:380px;padding:1.75rem;margin-top:8rem">
+    <h2 style="margin-bottom:.5rem">Reset Password</h2>
+    <p style="color:var(--text-muted);font-size:14px;margin-bottom:1.25rem">Set a new password for <strong id="reset-username" style="color:var(--text)"></strong></p>
+    <input type="password" id="reset-pw-input" placeholder="New password (min 6 chars)" autocomplete="new-password" style="margin-bottom:.5rem">
+    <p id="reset-pw-error" style="font-size:12px;color:var(--danger);min-height:18px;margin-bottom:.75rem"></p>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('reset-pw-modal').style.display='none'">Cancel</button>
+      <button class="primary" onclick="doResetPassword()">Set Password</button>
+    </div>
   </div>
 </div>
 
@@ -98,16 +121,27 @@
 </div>
 
 <script>
-let editUserId = null, deleteUserId = null;
+let editUserId = null, deleteUserId = null, resetUserId = null;
+
+function getRole() {
+  return document.getElementById('u-role')?.value || 'viewer';
+}
+function setRole(val) {
+  const sel = document.getElementById('u-role'); if(sel) sel.value = val;
+}
 
 function openUserModal() {
   editUserId = null;
   document.getElementById('user-modal-title').textContent = 'Add User';
   document.getElementById('user-save-btn').textContent    = 'Add User';
-  document.getElementById('user-form').reset();
-  document.getElementById('u-id').value = '';
+  document.getElementById('u-id').value      = '';
+  document.getElementById('u-username').value= '';
+  document.getElementById('u-password').value= '';
   document.getElementById('pw-hint').textContent = '';
-  document.getElementById('user-modal').style.display = 'flex';
+  setRole('viewer');
+  const modal = document.getElementById('user-modal');
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('u-username').focus(), 50);
 }
 
 function openEditUser(u) {
@@ -116,45 +150,69 @@ function openEditUser(u) {
   document.getElementById('user-save-btn').textContent    = 'Save Changes';
   document.getElementById('u-id').value       = u.id;
   document.getElementById('u-username').value = u.username;
-  document.getElementById('u-role').value     = u.role;
   document.getElementById('u-password').value = '';
   document.getElementById('pw-hint').textContent = 'Leave blank to keep current password';
+  setRole(u.role);
   document.getElementById('user-modal').style.display = 'flex';
 }
 
 function closeUserModal() { document.getElementById('user-modal').style.display = 'none'; }
 
-document.getElementById('user-form').addEventListener('submit', async e => {
-  e.preventDefault();
-  const btn = document.getElementById('user-save-btn');
+async function submitUser() {
+  const btn      = document.getElementById('user-save-btn');
+  const username = document.getElementById('u-username').value.trim();
+  const password = document.getElementById('u-password').value;
+  const role     = getRole();
+
+  if (!username) { showToast('Username is required', 'err'); return; }
+  if (!editUserId && !password) { showToast('Password is required', 'err'); return; }
+  if (!editUserId && password.length < 6) { showToast('Password must be at least 6 characters', 'err'); return; }
+
   btn.disabled = true; btn.textContent = 'Saving…';
-  const data = {
-    username: document.getElementById('u-username').value,
-    role:     document.getElementById('u-role').value,
-    password: document.getElementById('u-password').value,
-  };
+  const data = { username, role, password };
+
   try {
     if (editUserId) {
       await api('PUT', `/api/admin/users/${editUserId}`, data);
       showToast('User updated');
     } else {
-      if (!data.password) { showToast('Password is required','err'); btn.disabled=false; btn.textContent='Add User'; return; }
       await api('POST', '/api/admin/users', data);
-      showToast(`${data.username} created`);
+      showToast(`${username} created`);
     }
     closeUserModal();
     setTimeout(() => location.reload(), 500);
   } catch(err) {
     showToast(err.message, 'err');
-    btn.disabled = false; btn.textContent = editUserId ? 'Save Changes' : 'Add User';
+    btn.disabled = false;
+    btn.textContent = editUserId ? 'Save Changes' : 'Add User';
   }
-});
+}
+
+function openResetPassword(id, name) {
+  resetUserId = id;
+  document.getElementById('reset-username').textContent = name;
+  document.getElementById('reset-pw-input').value = '';
+  document.getElementById('reset-pw-error').textContent = '';
+  document.getElementById('reset-pw-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('reset-pw-input').focus(), 50);
+}
+
+async function doResetPassword() {
+  const pw = document.getElementById('reset-pw-input').value;
+  if (pw.length < 6) { document.getElementById('reset-pw-error').textContent = 'Must be at least 6 characters'; return; }
+  try {
+    await api('POST', `/admin/users/${resetUserId}/reset-password`, { password: pw });
+    document.getElementById('reset-pw-modal').style.display = 'none';
+    showToast('Password updated');
+  } catch(e) { document.getElementById('reset-pw-error').textContent = e.message; }
+}
 
 function confirmDeleteUser(id, name) {
   deleteUserId = id;
   document.getElementById('del-username').textContent = name;
   document.getElementById('delete-user-modal').style.display = 'flex';
 }
+
 async function doDeleteUser() {
   try {
     await api('DELETE', `/api/admin/users/${deleteUserId}`);
@@ -163,4 +221,6 @@ async function doDeleteUser() {
     setTimeout(() => location.reload(), 500);
   } catch(err) { showToast(err.message, 'err'); }
 }
+
+
 </script>

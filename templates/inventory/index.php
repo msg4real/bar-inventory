@@ -42,13 +42,13 @@ foreach ($fields as $f) { if ($f['visible']) $visibleFields[$f['field_name']] = 
     <i class="ti ti-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:15px;pointer-events:none"></i>
     <input id="search" placeholder="Search bottles…" style="padding-left:36px" oninput="filterBottles()">
   </div>
-  <select id="sort-by" onchange="filterBottles()" style="width:160px">
-    <option value="name">Name A–Z</option>
-    <option value="category">Category</option>
-    <option value="fill-desc">Fullest first</option>
-    <option value="fill-asc">Almost empty</option>
-    <option value="newest">Recently added</option>
-  </select>
+  <div class="cs-wrap" id="sort-wrap" data-name="sort-by" data-value="name" style="width:175px">
+    <div class="cs-options" data-value="name">Name A–Z</div>
+    <div class="cs-options" data-value="category">Category</div>
+    <div class="cs-options" data-value="fill-desc">Fullest first</div>
+    <div class="cs-options" data-value="fill-asc">Almost empty</div>
+    <div class="cs-options" data-value="newest">Recently added</div>
+  </div>
 </div>
 <!-- Category chips -->
 <div id="cat-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:1.5rem">
@@ -164,11 +164,11 @@ foreach ($fields as $f) { if ($f['visible']) $visibleFields[$f['field_name']] = 
         <?php endif; ?>
         <div>
           <label class="label">Category</label>
-          <select id="f-category">
-            <?php foreach (['Whiskey','Bourbon','Scotch','Wine','Red Wine','White Wine','Rosé','Vodka','Rum','Gin','Tequila','Mezcal','Cognac','Brandy','Champagne','Beer','Other'] as $c): ?>
-            <option value="<?= $c ?>" <?= $c===$defaultCat?'selected':'' ?>><?= $c ?></option>
+          <div class="cs-wrap" id="f-category-wrap" data-name="f-category" data-value="<?= htmlspecialchars($defaultCat) ?>" data-searchable="true">
+            <?php foreach ($categories as $c): ?>
+            <div class="cs-options" data-value="<?= htmlspecialchars($c) ?>"><?= htmlspecialchars($c) ?></div>
             <?php endforeach; ?>
-          </select>
+          </div>
         </div>
         <?php if (isset($visibleFields['vintage'])): ?>
         <div>
@@ -192,9 +192,11 @@ foreach ($fields as $f) { if ($f['visible']) $visibleFields[$f['field_name']] = 
         <div <?= $cf['type']==='text' || $cf['name']==='notes' ? 'style="grid-column:1/-1"':'' ?>>
           <label class="label"><?= htmlspecialchars($cf['label']) ?></label>
           <?php if ($cf['type']==='boolean'): ?>
-          <select class="custom-field" data-name="<?= $cf['name'] ?>">
-            <option value="">—</option><option value="1">Yes</option><option value="0">No</option>
-          </select>
+          <div class="cs-wrap custom-field-wrap" data-name="cf_<?= $cf['name'] ?>" data-value="" data-cf="<?= $cf['name'] ?>">
+            <div class="cs-options" data-value="">—</div>
+            <div class="cs-options" data-value="1">Yes</div>
+            <div class="cs-options" data-value="0">No</div>
+          </div>
           <?php elseif ($cf['type']==='date'): ?>
           <input type="date" class="custom-field" data-name="<?= $cf['name'] ?>">
           <?php else: ?>
@@ -286,7 +288,7 @@ let lastCodeTime = 0;
 // ── Filtering ─────────────────────────────────────────────────────────────────
 function filterBottles() {
   const q    = document.getElementById('search')?.value.toLowerCase() ?? '';
-  const sort = document.getElementById('sort-by')?.value ?? 'name';
+  const sort = document.querySelector('#sort-wrap input[type=hidden]')?.value ?? 'name';
   const cards = [...document.querySelectorAll('.bottle-card')];
   let visible = 0;
 
@@ -342,6 +344,7 @@ function openAddModal() {
   document.getElementById('barcode-field')?.style && (document.getElementById('barcode-field').style.display = 'none');
   document.getElementById('scan-status').textContent = 'Camera scan → auto-fills details from online database';
   document.getElementById('bottle-modal').style.display = 'flex';
+  initCustomSelects();
 }
 
 function editBottle(b) {
@@ -351,7 +354,7 @@ function editBottle(b) {
   document.getElementById('f-id').value = b.id;
   document.getElementById('f-name').value     = b.name     || '';
   document.getElementById('f-brand') && (document.getElementById('f-brand').value = b.brand || '');
-  document.getElementById('f-category').value = b.category || '';
+  document.getElementById('f-category-wrap')?.csSelect?.(b.category || '');
   document.getElementById('f-vintage') && (document.getElementById('f-vintage').value = b.vintage || '');
   document.getElementById('f-abv') && (document.getElementById('f-abv').value = b.abv || '');
   document.getElementById('f-country') && (document.getElementById('f-country').value = b.country || '');
@@ -360,10 +363,12 @@ function editBottle(b) {
   if (b.barcode) document.getElementById('barcode-field')?.style && (document.getElementById('barcode-field').style.display = '');
   const cd = typeof b.custom_data === 'string' ? JSON.parse(b.custom_data||'{}') : (b.custom_data||{});
   document.querySelectorAll('.custom-field').forEach(el => { el.value = cd[el.dataset.name] ?? ''; });
+  document.querySelectorAll('.custom-field-wrap').forEach(el => { el.csSelect?.(cd[el.dataset.cf] ?? ''); });
   setFill(b.fill ?? 100);
   document.getElementById('scan-btn').style.display = 'none';
   document.getElementById('scan-status').style.display = 'none';
   document.getElementById('bottle-modal').style.display = 'flex';
+  initCustomSelects();
 }
 
 function closeModal() { document.getElementById('bottle-modal').style.display = 'none'; }
@@ -386,10 +391,11 @@ document.getElementById('bottle-form')?.addEventListener('submit', async e => {
   btn.disabled = true; btn.textContent = 'Saving…';
   const cd = {};
   document.querySelectorAll('.custom-field').forEach(el => { cd[el.dataset.name] = el.value; });
+  document.querySelectorAll('.custom-field-wrap').forEach(el => { cd[el.dataset.cf] = el.querySelector('input[type=hidden]')?.value || ''; });
   const data = {
     name:     document.getElementById('f-name').value,
     brand:    document.getElementById('f-brand')?.value    || '',
-    category: document.getElementById('f-category').value,
+    category: document.querySelector('#f-category-wrap input[type=hidden]')?.value || '',
     vintage:  document.getElementById('f-vintage')?.value  || '',
     abv:      document.getElementById('f-abv')?.value      || '',
     country:  document.getElementById('f-country')?.value  || '',
@@ -506,7 +512,7 @@ async function fillFormFromBarcode(code) {
     const r = await api('GET', `/api/barcode/${code}`);
     document.getElementById('f-name').value     = r.name    || '';
     document.getElementById('f-brand') && (document.getElementById('f-brand').value = r.brand || '');
-    document.getElementById('f-category').value = r.category || '';
+    document.getElementById('f-category-wrap')?.csSelect?.(r.category || '');
     document.getElementById('f-vintage') && (document.getElementById('f-vintage').value = r.vintage || '');
     document.getElementById('f-abv') && (document.getElementById('f-abv').value = r.abv || '');
     document.getElementById('f-country') && (document.getElementById('f-country').value = r.country || '');

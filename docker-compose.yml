@@ -3,10 +3,11 @@ services:
     build: .
     container_name: bar-inventory
     ports:
+      - "8080:80"   # direct HTTP access for internal testing / NPM down or for npm on other server
       - "8443:443"   # direct HTTPS access for internal testing / NPM down
     volumes:
-      - /ont/homeserver/bar/data:/data
-      - /ont/homeserver/bar/app:/var/www/html
+      - /opt/homeserver/bar/data:/data
+      - /opt/homeserver/bar/app:/var/www/html
     environment:
       - DATA_PATH=/data
     restart: unless-stopped
